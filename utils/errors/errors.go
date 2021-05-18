@@ -11,7 +11,15 @@ type RestErr struct {
 func NewBadRequestError(message string) *RestErr {
 	return &RestErr{
 		Message: message,
-		Status: http.StatusBadRequest,
-		Error: "bad request",
+		Status:  http.StatusBadRequest,
+		Error:   "bad request",
+	}
+}
+
+func NewNotFoundError(message string) *RestErr {
+	return &RestErr{
+		Message: message,
+		Status:  http.StatusNotFound,
+		Error:   "not found",
 	}
 }

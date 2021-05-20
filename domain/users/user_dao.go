@@ -2,20 +2,26 @@
 package users
 
 import (
-	"fmt"
 	"log"
-	"strings"
 
 	"github.com/adamszpilewicz/bookstore_users-api/datasources/postgres/users_db"
 	"github.com/adamszpilewicz/bookstore_users-api/utils/date_utils"
 	"github.com/adamszpilewicz/bookstore_users-api/utils/errors"
+	"github.com/adamszpilewicz/bookstore_users-api/utils/postrgesql_utils"
 )
 
 const (
 	indexUniqueEmail = "email_key"
-	errorNoRows = "no rows in result set"
-	queryInsertUser = ("INSERT INTO users (first_name, last_name, email, date_created) VALUES ($1, $2, $3, $4);")
-	queryGetUser = ("SELECT id, first_name, last_name, email, date_created FROM users WHERE id=$1")
+	queryInsertUser  = ("INSERT INTO users (first_name, last_name, email, date_created) VALUES ($1, $2, $3, $4);")
+	queryGetUser     = ("SELECT id, first_name, last_name, email, date_created FROM users WHERE id=$1")
+	queryUpdateUser  = `
+	UPDATE users 
+		SET 
+			first_name = $1,
+			last_name = $2,
+			email = $3
+		WHERE
+			id = $4`
 )
 
 var (
@@ -31,14 +37,10 @@ func (u *User) Get() *errors.RestErr {
 	defer stmt.Close()
 
 	result := stmt.QueryRow(u.Id)
-	if err := result.Scan(&u.Id, &u.FirstName, &u.LastName, &u.Email, &u.DateCreated); err != nil {
-		if strings.Contains(err.Error(), errorNoRows) {
-			return errors.NewNotFoundError(fmt.Sprintf("user with the id of %d not found", u.Id))			
-		}
-		fmt.Println(err.Error())
-		return errors.NewInternalServerError(fmt.Sprintf("error while trying to get user with the id of %d: %s", u.Id, err.Error()))
-	}
 
+	if getErr := result.Scan(&u.Id, &u.FirstName, &u.LastName, &u.Email, &u.DateCreated); getErr != nil {
+		return postrgesql_utils.ParseError(getErr)
+	}
 	return nil
 }
 
@@ -49,23 +51,34 @@ func (u *User) Save() *errors.RestErr {
 		return errors.NewInternalServerError(err.Error())
 	}
 	defer stmt.Close()
-	insertResult, err := stmt.Exec(u.FirstName, u.LastName, u.Email, date_utils.GetNowString())
-	if err != nil {
-		if strings.Contains(err.Error(), indexUniqueEmail) {
-			return errors.NewBadRequestError(fmt.Sprintf("email %s already exists", u.Email))
-		}
-		return errors.NewInternalServerError(fmt.Sprintf("error while trying saving user to database: %s", err.Error()))
+
+	insertResult, saveErr := stmt.Exec(u.FirstName, u.LastName, u.Email, date_utils.GetNowString())
+	if saveErr != nil {
+		return postrgesql_utils.ParseError(saveErr)
 	}
+
 	log.Println(insertResult)
 
 	currentUser := userDB[u.Id]
 	if currentUser != nil {
-		if currentUser.Email == u.Email {
-			return errors.NewBadRequestError(fmt.Sprintf("mail %s already taken", u.Email))
-		}
-		return errors.NewBadRequestError(fmt.Sprintf("user with the id of %d already created", u.Id))
+		return postrgesql_utils.ParseError(saveErr)
 	}
 	// u.DateCreated = date_utils.GetNowString()
 	userDB[u.Id] = u
 	return nil
+}
+
+func (u *User) Update() *errors.RestErr {
+	stmt, err := users_db.Client.Prepare(queryUpdateUser)
+	if err != nil {
+		return errors.NewInternalServerError(err.Error())
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(u.FirstName, u.LastName, u.Email, u.Id)
+	if err != nil {
+		return postrgesql_utils.ParseError(err)
+	}
+	return nil
+
 }

@@ -47,6 +47,36 @@ func GetUser(c *gin.Context) {
 	c.JSON(http.StatusOK, result)
 }
 
+func UpdateUser(c *gin.Context) {
+	// validate userId
+	userId, userErr := strconv.ParseInt(c.Param("user_id"), 10, 64)
+	if userErr != nil {
+		err := errors.NewBadRequestError("user id should be a number")
+		c.JSON(err.Status, err)
+		return
+	}
+
+	// unpack json to user struct
+	var user users.User
+	if err := c.ShouldBindJSON(&user); err != nil {
+		restErr := errors.NewBadRequestError("invalid json body")
+		c.JSON(restErr.Status, restErr)
+		return
+	}
+
+	user.Id = userId
+
+	isPartial := c.Request.Method == http.MethodPatch
+
+	// call update service
+	result, err := services.UpdateUser(isPartial, user)
+	if err != nil {
+		c.JSON(err.Status, err)
+		return
+	}
+	c.JSON(http.StatusOK, result)
+}
+
 func FindUser(c *gin.Context) {
 	c.String(http.StatusNotImplemented, "not implemented")
 }
